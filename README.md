@@ -8,7 +8,10 @@ A fake SSH server that logs every brute-force attempt and displays attacker data
 
 > World map with live attack markers, credential charts, and attack timeline.
 
-*(deploy and replace this with a real screenshot)*
+<img width="1917" height="787" alt="dashboard" src="https://github.com/user-attachments/assets/ec0869c4-08d2-4b4e-9b1c-4be3b814f85c" />
+
+<img width="1918" height="780" alt="dashboard1" src="https://github.com/user-attachments/assets/14b14a1e-6af4-4f64-b235-905b0cdd4371" />
+
 
 ---
 
