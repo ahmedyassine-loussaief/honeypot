@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Honeypot Dashboard</title>
+
+  <!-- Leaflet for the map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>#status {
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0d1117; color: #c9d1d9; font-family: monospace; }
+
+    header {
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 32px;
+    }
+    header h1 { color: #f85149; font-size: 1.2rem; }
+
+    .stat {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .stat span:first-child { font-size: 1.4rem; color: #58a6ff; font-weight: bold; }
+    .stat span:last-child  { font-size: 0.7rem; color: #8b949e; }
+
+    #map {
+      height: 420px;
+      width: 100%;
+      border-bottom: 1px solid #30363d;
+    }
+
+    .table-wrap {
+      padding: 16px 24px;
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+    th {
+      text-align: left;
+      padding: 8px 12px;
+      background: #161b22;
+      color: #8b949e;
+      border-bottom: 1px solid #30363d;
+    }
+    td {
+      padding: 7px 12px;
+      border-bottom: 1px solid #21262d;
+    }
+    tr:hover td { background: #161b22; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      background: #1f2937;
+      color: #f85149;
+    }
+
+    #status {
+      position: fixed;
+      bottom: 12px; right: 16px;
+      font-size: 0.72rem;
+      color: #3fb950;
+    }
+  .charts {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px;
+      padding: 16px 24px;
+      border-bottom: 1px solid #30363d;
+    }
+    .chart-box {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .chart-box h3 {
+      font-size: 0.75rem;
+      color: #8b949e;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🛡 Honeypot Monitor</h1>
+  <div class="stat"><span id="total">0</span><span>Total Attacks</span></div>
+  <div class="stat"><span id="unique">0</span><span>Unique IPs</span></div>
+  <div class="stat"><span id="topcountry">—</span><span>Top Country</span></div>
+</header>
+
+<div id="map"></div>
+<div class="charts">
+  <div class="chart-box">
+    <h3>Top Usernames</h3>
+    <canvas id="chartUsernames"></canvas>
+  </div>
+  <div class="chart-box">
+    <h3>Top Passwords</h3>
+    <canvas id="chartPasswords"></canvas>
+  </div>
+  <div class="chart-box">
+    <h3>Attacks Over Time</h3>
+    <canvas id="chartTimeline"></canvas>
+  </div>
+</div>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>IP</th>
+        <th>Username</th>
+        <th>Password</th>
+        <th>Country</th>
+        <th>City</th>
+        <th>ISP</th>
+        <th>Abuse Score</th>
+      </tr>
+    </thead>
+    <tbody id="attack-table"></tbody>
+  </table>
+</div>
+
+<div id="status">● live</div>
+
+<script>
+  // init dark-themed map centered on world
+  const map = L.map("map").setView([20, 0], 2);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+    attribution: "© OpenStreetMap © CARTO",
+    maxZoom: 18
+  }).addTo(map);
+
+  let knownIds = new Set();
+
+  function refresh() {
+    // update stats
+    fetch("/api/stats")
+      .then(r => r.json())
+      .then(s => {
+        document.getElementById("total").textContent = s.total;
+        document.getElementById("unique").textContent = s.unique_ips;
+        document.getElementById("topcountry").textContent = s.top_country;
+      });
+
+    // update table and map markers
+    fetch("/api/attacks")
+      .then(r => r.json())
+      .then(attacks => {
+        const tbody = document.getElementById("attack-table");
+
+        attacks.forEach(a => {
+          // only add rows and markers we haven't seen yet
+          if (knownIds.has(a.id)) return;
+          knownIds.add(a.id);
+
+          // add map marker
+          if (a.latitude && a.longitude) {
+            L.circleMarker([a.latitude, a.longitude], {
+              radius: 5,
+              color: "#f85149",
+              fillColor: "#f85149",
+              fillOpacity: 0.7
+            })
+            .bindPopup(`<b>${a.ip}</b><br>${a.country} — ${a.city}<br>${a.username}:${a.password}`)
+            .addTo(map);
+          }
+
+          // prepend table row
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${a.timestamp}</td>
+            <td><code>${a.ip}</code></td>
+            <td>${a.username}</td>
+            <td><span class="badge">${a.password}</span></td>
+            <td>${a.country}</td>
+            <td>${a.city}</td>
+            <td>${a.isp}</td>
+            <td>${a.abuse_score}</td>
+          `;
+          tbody.prepend(tr);
+        });
+      });
+  }
+
+  // init charts
+  const chartConfig = (label, color) => ({
+    type: "bar",
+    data: { labels: [], datasets: [{ label, data: [], backgroundColor: color, borderRadius: 4 }] },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: "#8b949e" }, grid: { color: "#21262d" } },
+        y: { ticks: { color: "#8b949e", stepSize: 1 }, grid: { color: "#21262d" } }
+      }
+    }
+  });
+
+  const chartUsernames = new Chart(
+    document.getElementById("chartUsernames"),
+    chartConfig("Attempts", "#58a6ff")
+  );
+  const chartPasswords = new Chart(
+    document.getElementById("chartPasswords"),
+    chartConfig("Attempts", "#f85149")
+  );
+  const chartTimeline = new Chart(
+    document.getElementById("chartTimeline"),
+    { ...chartConfig("Attacks", "#3fb950"), type: "line" }
+  );
+
+  function updateCharts(attacks) {
+    // count usernames
+    const userCount = {};
+    const passCount = {};
+    const timeCount = {};
+
+    attacks.forEach(a => {
+      userCount[a.username] = (userCount[a.username] || 0) + 1;
+      passCount[a.password] = (passCount[a.password] || 0) + 1;
+      const hour = a.timestamp.slice(0, 13); // "2026-06-23 09"
+      timeCount[hour] = (timeCount[hour] || 0) + 1;
+    });
+
+    const top = (obj, n) => Object.entries(obj)
+      .sort((a, b) => b[1] - a[1]).slice(0, n);
+
+    const topUsers = top(userCount, 5);
+    chartUsernames.data.labels = topUsers.map(x => x[0]);
+    chartUsernames.data.datasets[0].data = topUsers.map(x => x[1]);
+    chartUsernames.update();
+
+    const topPass = top(passCount, 5);
+    chartPasswords.data.labels = topPass.map(x => x[0]);
+    chartPasswords.data.datasets[0].data = topPass.map(x => x[1]);
+    chartPasswords.update();
+
+    const timeline = Object.entries(timeCount).sort();
+    chartTimeline.data.labels = timeline.map(x => x[0].slice(11) + "h");
+    chartTimeline.data.datasets[0].data = timeline.map(x => x[1]);
+    chartTimeline.update();
+  }
+
+  function refresh() {
+    fetch("/api/stats")
+      .then(r => r.json())
+      .then(s => {
+        document.getElementById("total").textContent = s.total;
+        document.getElementById("unique").textContent = s.unique_ips;
+        document.getElementById("topcountry").textContent = s.top_country;
+      });
+
+    fetch("/api/attacks")
+      .then(r => r.json())
+      .then(attacks => {
+        updateCharts(attacks);
+        const tbody = document.getElementById("attack-table");
+
+        attacks.forEach(a => {
+          if (knownIds.has(a.id)) return;
+          knownIds.add(a.id);
+
+          if (a.latitude && a.longitude) {
+            L.circleMarker([a.latitude, a.longitude], {
+              radius: 5,
+              color: "#f85149",
+              fillColor: "#f85149",
+              fillOpacity: 0.7
+            })
+            .bindPopup(`<b>${a.ip}</b><br>${a.country} — ${a.city}<br>${a.username}:${a.password}`)
+            .addTo(map);
+          }
+
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${a.timestamp}</td>
+            <td><code>${a.ip}</code></td>
+            <td>${a.username}</td>
+            <td><span class="badge">${a.password}</span></td>
+            <td>${a.country}</td>
+            <td>${a.city}</td>
+            <td>${a.isp}</td>
+            <td>${a.abuse_score}</td>
+          `;
+          tbody.prepend(tr);
+        });
+      });
+  }
+
+  refresh();
+  setInterval(refresh, 5000);
+</script>
+
+</body>
+</html>
