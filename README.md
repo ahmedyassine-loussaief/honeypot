@@ -89,6 +89,24 @@ python3 dashboard.py
 Open `http://127.0.0.1:5000` in your browser.
 
 > By default the honeypot listens on port **2222** for local testing.
+## Deploy on a real server
+
+To catch real attackers the honeypot needs to be exposed to the internet.
+
+```bash
+# clone on your server
+git clone https://github.com/ahmedyassine-loussaief/honeypot.git
+cd honeypot
+pip3 install -r requirements.txt --break-system-packages
+
+# change PORT = 2222 to PORT = 22 in honeypot.py
+
+# run persistently with screen
+screen -S honeypot -dm python3 honeypot.py
+screen -S dashboard -dm python3 dashboard.py
+```
+
+Open `http://<YOUR_SERVER_IP>:5000` — within hours you will see real attacks from around the world.
 
 ## Disclaimer
 
